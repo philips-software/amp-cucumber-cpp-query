@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "Host",
+      "displayName": "Host",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/Host",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CUCUMBER_QUERY_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "Coverage",
+      "displayName": "Coverage",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/Coverage",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CUCUMBER_QUERY_BUILD_TESTS": "ON",
+        "CUCUMBER_QUERY_ENABLE_COVERAGE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "Host",
+      "configurePreset": "Host"
+    },
+    {
+      "name": "Coverage",
+      "configurePreset": "Coverage"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "Coverage",
+      "configurePreset": "Coverage",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

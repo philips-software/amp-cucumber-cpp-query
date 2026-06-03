@@ -1,0 +1,123 @@
+name: CI C++
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - 'release/*'
+  pull_request:
+
+jobs:
+  devcontainer:
+    name: Build & Test (${{ matrix.toolchain }}-${{ matrix.arch }})
+    runs-on: [self-hosted, linux, "${{ matrix.arch }}", philips-code-hub, ubuntu-latest]
+    container:
+      image: ghcr.io/philips-software/amp-devcontainer-cpp:6.10.3@sha256:e1f388179dbeabaddcdd37b8b563ed89ca3cd36dcf158aa2e5c4f70eb513efec
+    env:
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [ gcc, clang ]
+        arch: [ x64, arm64 ]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Cache CPM packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cpm
+          key: cpm-${{ hashFiles('cpp/cmake/dependencies.cpm.cmake') }}
+          restore-keys: cpm-
+
+      - name: Cache ccache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ matrix.toolchain }}-${{ matrix.arch }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.toolchain }}-${{ matrix.arch }}-
+
+      - name: Configure
+        working-directory: cpp
+        run: cmake --preset Coverage --toolchain cmake/toolchains/${{ matrix.toolchain }}.cmake -DCPM_SOURCE_CACHE=~/.cpm
+
+      - name: Build
+        working-directory: cpp
+        run: cmake --build --preset Coverage
+
+      - name: Test
+        working-directory: cpp
+        run: ctest --preset Coverage --test-dir build/Coverage
+
+  compiler-versions:
+    name: ${{ matrix.cxx }}-${{ matrix.version }}
+    runs-on: [self-hosted, linux, x64, philips-code-hub, "${{ matrix.runner }}"]
+    env:
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { cc: gcc,   cxx: g++,     version: 11, runner: ubuntu-2404 }
+          - { cc: gcc,   cxx: g++,     version: 12, runner: ubuntu-2404 }
+          - { cc: gcc,   cxx: g++,     version: 13, runner: ubuntu-2404 }
+          - { cc: gcc,   cxx: g++,     version: 14, runner: ubuntu-2404 }
+          - { cc: clang, cxx: clang++, version: 16, runner: ubuntu-2204 }
+          - { cc: clang, cxx: clang++, version: 17, runner: ubuntu-2404 }
+          - { cc: clang, cxx: clang++, version: 18, runner: ubuntu-2404 }
+          - { cc: clang, cxx: clang++, version: 19, runner: ubuntu-2404 }
+          - { cc: clang, cxx: clang++, version: 20, runner: ubuntu-2404 }
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build ccache
+
+      - name: Install GCC ${{ matrix.version }}
+        if: matrix.cc == 'gcc'
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y gcc-${{ matrix.version }} g++-${{ matrix.version }}
+
+      - name: Install Clang ${{ matrix.version }}
+        if: matrix.cc == 'clang'
+        run: |
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh ${{ matrix.version }}
+
+      - name: Cache CPM packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cpm
+          key: cpm-${{ hashFiles('cpp/cmake/dependencies.cpm.cmake') }}
+          restore-keys: cpm-
+
+      - name: Cache ccache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ matrix.cc }}-${{ matrix.version }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.cc }}-${{ matrix.version }}-
+
+      - name: Configure
+        working-directory: cpp
+        run: >
+          cmake --preset Coverage
+          -DCMAKE_C_COMPILER=${{ matrix.cc }}-${{ matrix.version }}
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}-${{ matrix.version }}
+          -DCPM_SOURCE_CACHE=~/.cpm
+
+      - name: Build
+        working-directory: cpp
+        run: cmake --build --preset Coverage
+
+      - name: Test
+        working-directory: cpp
+        run: ctest --preset Coverage --test-dir build/Coverage
