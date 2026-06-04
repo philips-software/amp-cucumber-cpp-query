@@ -78,6 +78,7 @@ endif()
 # Optional: tests
 # ---------------------------------------------------------------------------
 if(CUCUMBER_QUERY_BUILD_TESTS)
+    include(CTest)
     enable_testing()
     add_subdirectory(cucumber/query/test)
 endif()
