@@ -8,6 +8,7 @@ target_link_libraries(cucumber.query.test
     PRIVATE
         cucumber::query
         GTest::gtest_main
+        GTest::gmock
 )
 
 target_compile_definitions(cucumber.query.test

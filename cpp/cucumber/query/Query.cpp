@@ -266,8 +266,13 @@ namespace cucumber::query
     {
         using Status = cucumber::messages::test_step_result_status;
         std::map<Status, int> result = {
-            { Status::AMBIGUOUS, 0 }, { Status::FAILED, 0 }, { Status::PASSED, 0 },
-            { Status::PENDING, 0 }, { Status::SKIPPED, 0 }, { Status::UNDEFINED, 0 }, { Status::UNKNOWN, 0 }
+            { Status::AMBIGUOUS, 0 },
+            { Status::FAILED, 0 },
+            { Status::PASSED, 0 },
+            { Status::PENDING, 0 },
+            { Status::SKIPPED, 0 },
+            { Status::UNDEFINED, 0 },
+            { Status::UNKNOWN, 0 },
         };
 
         for (const auto& testCaseStarted : FindAllTestCaseStarted())

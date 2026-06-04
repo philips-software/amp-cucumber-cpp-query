@@ -28,6 +28,8 @@
 - External dependencies should be included using double quotes (`"..."`), e.g., `#include "nlohmann/json.hpp"`.
 - Special note for nlohmann/json. json_fwd.hpp should be used in headers to avoid unnecessary inclusion of the full json.hpp, and json.hpp should be used in source files where the full implementation is needed. Unless there is a specific reason to include json.hpp in a header, prefer json_fwd.hpp to minimize compilation dependencies. This could be when defining functions that take or return nlohmann::json by value or when using features that require the full implementation in a header context.
 - Identifiers shall not be acronyms, but rather written in full. For example, use `calculateArea()` instead of `calcArea()`, and `initializeDatabase()` instead of `initDB()`. This promotes readability and clarity in the codebase. Unless the identifier becomes too long or unwieldy, in which case a well-known abbreviation may be acceptable. (`i`, `j` and `k` for index is acceptable, but `idx` is not).
+- Always write const-correct code. Const variables, const parameters, const members, and const member functions should be used wherever applicable to indicate immutability and to enable better optimization by the compiler. This includes marking member functions as const when they do not modify the state of the object, and using const references for parameters that are not modified within the function.
+- Static private members should be declared in an anonymous namespace in the source file rather than as static members of a class, to limit their scope to the translation unit and avoid potential issues with static initialization order across different translation units.
 
 **Build Commands**:
 ```sh
