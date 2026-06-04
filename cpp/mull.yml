@@ -1,0 +1,8 @@
+mutators:
+  - cxx_default
+excludePaths:
+  - .*/test/.*
+  - .*/googletest/.*
+  - .*/googlemock/.*
+  - .*/CPM/.*
+  - .*/\.cpm/.*

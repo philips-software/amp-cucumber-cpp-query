@@ -3,10 +3,18 @@
 #include "cucumber/messages/envelope.hpp"
 #include "cucumber/messages/location.hpp"
 #include "cucumber/messages/pickle.hpp"
+#include "cucumber/messages/pickle_step.hpp"
 #include "cucumber/messages/test_case.hpp"
 #include "cucumber/messages/test_case_finished.hpp"
 #include "cucumber/messages/test_case_started.hpp"
+#include "cucumber/messages/test_run_finished.hpp"
+#include "cucumber/messages/test_run_hook_finished.hpp"
+#include "cucumber/messages/test_run_hook_started.hpp"
+#include "cucumber/messages/test_run_started.hpp"
+#include "cucumber/messages/test_step.hpp"
+#include "cucumber/messages/test_step_finished.hpp"
 #include "cucumber/messages/test_step_result_status.hpp"
+#include "cucumber/messages/test_step_started.hpp"
 #include "cucumber/query/Lineage.hpp"
 #include "messages_from_json.hpp"
 #include "nlohmann/json.hpp"
@@ -182,6 +190,31 @@ TEST(TestQuery, FindAllTestCaseFinished_MinimalHasOneFinished)
     EXPECT_THAT(query.FindAllTestCaseFinished(), testing::SizeIs(1u));
 }
 
+TEST(TestQuery, FindAllTestCaseFinished_TimestampSortDominatesIdOrder)
+{
+    using namespace cucumber::messages;
+
+    // Given: "zzz_tcs" finishes earlier than "aaa_tcs", so it must sort first
+    const test_case_started startedA{ .attempt = 0, .id = "aaa_tcs", .test_case_id = "tc1", .timestamp = { .seconds = 0, .nanos = 0 } };
+    const test_case_started startedZ{ .attempt = 0, .id = "zzz_tcs", .test_case_id = "tc2", .timestamp = { .seconds = 0, .nanos = 0 } };
+    const test_case_finished finishedA{ .test_case_started_id = "aaa_tcs", .timestamp = { .seconds = 2, .nanos = 0 }, .will_be_retried = false };
+    const test_case_finished finishedZ{ .test_case_started_id = "zzz_tcs", .timestamp = { .seconds = 1, .nanos = 0 }, .will_be_retried = false };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_case_started = startedA });
+    query.Update(envelope{ .test_case_started = startedZ });
+    query.Update(envelope{ .test_case_finished = finishedA });
+    query.Update(envelope{ .test_case_finished = finishedZ });
+
+    // When
+    const auto result = query.FindAllTestCaseFinished();
+
+    // Then: earlier finish timestamp wins over lexicographic id order
+    ASSERT_THAT(result, testing::SizeIs(2u));
+    EXPECT_THAT(result[0].test_case_started_id, testing::Eq("zzz_tcs"));
+    EXPECT_THAT(result[1].test_case_started_id, testing::Eq("aaa_tcs"));
+}
+
 TEST(TestQuery, FindAllTestCaseFinishedOrderBy_EmptyQuery)
 {
     using namespace cucumber::messages;
@@ -233,6 +266,47 @@ TEST(TestQuery, FindAllTestCaseFinishedOrderBy_ItemsWithoutPickleAreSortedToEnd)
     ASSERT_THAT(result, testing::SizeIs(2u));
     EXPECT_THAT(result[0].test_case_started_id, testing::Eq("linked"));
     EXPECT_THAT(result[1].test_case_started_id, testing::Eq("unlinked"));
+}
+
+TEST(TestQuery, FindAllTestCaseFinishedOrderBy_OrderIsRespected)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    const pickle pickleA{ .id = "p1", .uri = "features/a.feature", .location = location{ .line = 1, .column = 1 } };
+    const pickle pickleB{ .id = "p2", .uri = "features/b.feature", .location = location{ .line = 1, .column = 1 } };
+    const test_case testCaseA{ .id = "tc1", .pickle_id = "p1" };
+    const test_case testCaseB{ .id = "tc2", .pickle_id = "p2" };
+    const test_case_started startedA{ .attempt = 0, .id = "tcs1", .test_case_id = "tc1", .timestamp = { .seconds = 1, .nanos = 0 } };
+    const test_case_started startedB{ .attempt = 0, .id = "tcs2", .test_case_id = "tc2", .timestamp = { .seconds = 2, .nanos = 0 } };
+    const test_case_finished finishedA{ .test_case_started_id = "tcs1", .timestamp = { .seconds = 3, .nanos = 0 }, .will_be_retried = false };
+    const test_case_finished finishedB{ .test_case_started_id = "tcs2", .timestamp = { .seconds = 4, .nanos = 0 }, .will_be_retried = false };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .pickle = pickleA });
+    query.Update(envelope{ .pickle = pickleB });
+    query.Update(envelope{ .test_case = testCaseA });
+    query.Update(envelope{ .test_case = testCaseB });
+    query.Update(envelope{ .test_case_started = startedA });
+    query.Update(envelope{ .test_case_started = startedB });
+    query.Update(envelope{ .test_case_finished = finishedA });
+    query.Update(envelope{ .test_case_finished = finishedB });
+
+    // When: sort by URI descending (b before a)
+    const auto result = query.FindAllTestCaseFinishedOrderBy<pickle>(
+        [](const cucumber::query::Query& q, const test_case_finished& tcf)
+        {
+            return q.FindPickleBy(tcf);
+        },
+        [](const pickle& lhs, const pickle& rhs)
+        {
+            return static_cast<int>(rhs.uri.compare(lhs.uri));
+        });
+
+    // Then: b.feature before a.feature
+    ASSERT_THAT(result, testing::SizeIs(2u));
+    EXPECT_THAT(result[0].test_case_started_id, testing::Eq("tcs2"));
+    EXPECT_THAT(result[1].test_case_started_id, testing::Eq("tcs1"));
 }
 
 struct FindAllTestCaseFinishedOrderByFixture
@@ -360,6 +434,48 @@ TEST(TestQuery, FindAllTestCaseStarted_ExcludesRetriedTestCases)
     EXPECT_THAT(query.FindAllTestCaseStarted(), testing::IsEmpty());
 }
 
+TEST(TestQuery, FindAllTestCaseStarted_TimestampSortDominatesIdOrder)
+{
+    using namespace cucumber::messages;
+
+    // Given: "aaa" has a later timestamp than "zzz", so "zzz" must sort first
+    const test_case_started early{ .attempt = 0, .id = "aaa", .test_case_id = "1", .timestamp = { .seconds = 2, .nanos = 0 } };
+    const test_case_started late{ .attempt = 0, .id = "zzz", .test_case_id = "2", .timestamp = { .seconds = 1, .nanos = 0 } };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_case_started = early });
+    query.Update(envelope{ .test_case_started = late });
+
+    // When
+    const auto result = query.FindAllTestCaseStarted();
+
+    // Then: earlier timestamp wins over lexicographic id order
+    ASSERT_THAT(result, testing::SizeIs(2u));
+    EXPECT_THAT(result[0].id, testing::Eq("zzz"));
+    EXPECT_THAT(result[1].id, testing::Eq("aaa"));
+}
+
+TEST(TestQuery, FindAllTestCaseStarted_NanosResolutionAffectsSortOrder)
+{
+    using namespace cucumber::messages;
+
+    // Given: same seconds, "zzz" has nanos=0 and "aaa" has nanos=2'000'000 (2ms later)
+    const test_case_started first{ .attempt = 0, .id = "zzz", .test_case_id = "1", .timestamp = { .seconds = 1, .nanos = 0 } };
+    const test_case_started second{ .attempt = 0, .id = "aaa", .test_case_id = "2", .timestamp = { .seconds = 1, .nanos = 2000000 } };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_case_started = second });
+    query.Update(envelope{ .test_case_started = first });
+
+    // When
+    const auto result = query.FindAllTestCaseStarted();
+
+    // Then: nanos difference is reflected in sort order
+    ASSERT_THAT(result, testing::SizeIs(2u));
+    EXPECT_THAT(result[0].id, testing::Eq("zzz"));
+    EXPECT_THAT(result[1].id, testing::Eq("aaa"));
+}
+
 TEST(TestQuery, FindAllTestCaseStartedOrderBy_EmptyQuery)
 {
     using namespace cucumber::messages;
@@ -407,6 +523,47 @@ TEST(TestQuery, FindAllTestCaseStartedOrderBy_ItemsWithoutPickleAreSortedToEnd)
     ASSERT_THAT(result, testing::SizeIs(2u));
     EXPECT_THAT(result[0].id, testing::Eq("linked"));
     EXPECT_THAT(result[1].id, testing::Eq("unlinked"));
+}
+
+TEST(TestQuery, FindAllTestCaseStartedOrderBy_OrderIsRespected)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    const pickle pickleA{ .id = "p1", .uri = "features/a.feature", .location = location{ .line = 1, .column = 1 } };
+    const pickle pickleB{ .id = "p2", .uri = "features/b.feature", .location = location{ .line = 1, .column = 1 } };
+    const test_case testCaseA{ .id = "tc1", .pickle_id = "p1" };
+    const test_case testCaseB{ .id = "tc2", .pickle_id = "p2" };
+    const test_case_started startedA{ .attempt = 0, .id = "tcs1", .test_case_id = "tc1", .timestamp = { .seconds = 1, .nanos = 0 } };
+    const test_case_started startedB{ .attempt = 0, .id = "tcs2", .test_case_id = "tc2", .timestamp = { .seconds = 2, .nanos = 0 } };
+    const test_case_finished finishedA{ .test_case_started_id = "tcs1", .timestamp = { .seconds = 3, .nanos = 0 }, .will_be_retried = false };
+    const test_case_finished finishedB{ .test_case_started_id = "tcs2", .timestamp = { .seconds = 4, .nanos = 0 }, .will_be_retried = false };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .pickle = pickleA });
+    query.Update(envelope{ .pickle = pickleB });
+    query.Update(envelope{ .test_case = testCaseA });
+    query.Update(envelope{ .test_case = testCaseB });
+    query.Update(envelope{ .test_case_started = startedA });
+    query.Update(envelope{ .test_case_started = startedB });
+    query.Update(envelope{ .test_case_finished = finishedA });
+    query.Update(envelope{ .test_case_finished = finishedB });
+
+    // When: sort by URI descending (b before a)
+    const auto result = query.FindAllTestCaseStartedOrderBy<pickle>(
+        [](const cucumber::query::Query& q, const test_case_started& tcs)
+        {
+            return q.FindPickleBy(tcs);
+        },
+        [](const pickle& lhs, const pickle& rhs)
+        {
+            return static_cast<int>(rhs.uri.compare(lhs.uri));
+        });
+
+    // Then: b.feature before a.feature
+    ASSERT_THAT(result, testing::SizeIs(2u));
+    EXPECT_THAT(result[0].id, testing::Eq("tcs2"));
+    EXPECT_THAT(result[1].id, testing::Eq("tcs1"));
 }
 
 struct FindAllTestCaseStartedOrderByFixture
@@ -573,6 +730,30 @@ TEST(TestQuery, FindAttachmentsBy_TestRunHookFinishedHasAttachments)
     EXPECT_THAT(foundAttachment, testing::IsTrue());
 }
 
+TEST(TestQuery, FindAttachmentsBy_UnknownTestStepFinishedReturnsEmpty)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_step_finished stepFinished{ .test_case_started_id = "nonexistent", .test_step_id = "s1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindAttachmentsBy(stepFinished), testing::IsEmpty());
+}
+
+TEST(TestQuery, FindAttachmentsBy_UnknownTestRunHookFinishedReturnsEmpty)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_run_hook_finished hookFinished{ .test_run_hook_started_id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindAttachmentsBy(hookFinished), testing::IsEmpty());
+}
+
 TEST(TestQuery, FindHookBy_ViaTestStepInHooksFixture)
 {
     // Given
@@ -629,6 +810,42 @@ TEST(TestQuery, FindHookBy_ViaTestRunHookFinished)
 
     // Then
     EXPECT_THAT(hook, testing::Optional(testing::_));
+}
+
+TEST(TestQuery, FindHookBy_UnknownTestStepHookIdReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_step testStep{ .hook_id = "nonexistent-hook", .id = "ts1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindHookBy(testStep), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindHookBy_UnknownTestRunHookStartedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_run_hook_started hookStarted{ .id = "h1", .hook_id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindHookBy(hookStarted), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindHookBy_UnknownTestRunHookFinishedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_run_hook_finished hookFinished{ .test_run_hook_started_id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindHookBy(hookFinished), testing::Eq(std::nullopt));
 }
 
 TEST(TestQuery, FindLineageBy_MinimalScenario)
@@ -733,6 +950,118 @@ TEST(TestQuery, FindLineageBy_ViaTestCaseFinished)
     EXPECT_THAT(lineage->scenario, testing::Optional(testing::_));
 }
 
+TEST(TestQuery, FindLineageBy_EmptyAstNodeIdsReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given: pickle with no ast_node_ids
+    cucumber::query::Query query;
+    const pickle p{ .id = "p1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindLineageBy(p), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindLineageBy_UnknownAstNodeIdReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given: pickle referencing a node that was never indexed
+    cucumber::query::Query query;
+    const pickle p{ .id = "p1", .ast_node_ids = { "no-such-node" } };
+
+    // When / Then
+    EXPECT_THAT(query.FindLineageBy(p), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindLineageBy_SecondExamplesHasCorrectIndex)
+{
+    using namespace cucumber::messages;
+
+    // Given: examples-tables.ndjson has a scenario with 2 examples blocks and multiple rows
+    const auto [envelopes, query] = LoadNdjsonWithQuery(TestdataFile("examples-tables.ndjson"));
+
+    bool foundSecondExamples = false;
+    bool foundSecondRow = false;
+
+    // When: inspect lineage of every pickle
+    for (const auto& env : envelopes)
+    {
+        if (!env.pickle)
+            continue;
+        const auto lineage = query.FindLineageBy(*env.pickle);
+        if (!lineage || !lineage->examples)
+            continue;
+        if (lineage->examplesIndex == 1u)
+            foundSecondExamples = true;
+        if (lineage->exampleIndex == 1u)
+            foundSecondRow = true;
+    }
+
+    // Then: at least one pickle has examplesIndex==1 and one has exampleIndex==1
+    EXPECT_THAT(foundSecondExamples, testing::IsTrue()) << "No pickle with examplesIndex==1 found";
+    EXPECT_THAT(foundSecondRow, testing::IsTrue()) << "No pickle with exampleIndex==1 found";
+}
+
+TEST(TestQuery, FindLineageBy_RuleScenarioIsIndexed)
+{
+    // Given: rules.ndjson has scenarios inside rules
+    const auto [envelopes, query] = LoadNdjsonWithQuery(TestdataFile("rules.ndjson"));
+
+    bool foundRuleScenario = false;
+
+    // When: inspect lineage of every pickle
+    for (const auto& env : envelopes)
+    {
+        if (!env.pickle)
+            continue;
+        const auto lineage = query.FindLineageBy(*env.pickle);
+        if (lineage && lineage->rule)
+        {
+            foundRuleScenario = true;
+            break;
+        }
+    }
+
+    // Then: at least one pickle has rule lineage
+    EXPECT_THAT(foundRuleScenario, testing::IsTrue()) << "No pickle with rule lineage found";
+}
+
+TEST(TestQuery, FindLineageBy_RuleBackgroundStepIsIndexed)
+{
+    // Given: rules-backgrounds.ndjson has scenarios in rules with backgrounds
+    const auto query = QueryFromNdjson(TestdataFile("rules-backgrounds.ndjson"));
+    const auto all = query.FindAllTestCaseStarted();
+    ASSERT_THAT(all, testing::Not(testing::IsEmpty()));
+
+    bool foundStep = false;
+
+    // When: walk all steps looking for one that resolves through FindStepBy
+    for (const auto& tcs : all)
+    {
+        const auto stepsStarted = query.FindTestStepsStartedBy(tcs);
+        for (const auto& stepStarted : stepsStarted)
+        {
+            const auto testStep = query.FindTestStepBy(stepStarted);
+            if (!testStep)
+                continue;
+            const auto pickleStep = query.FindPickleStepBy(*testStep);
+            if (!pickleStep)
+                continue;
+            if (query.FindStepBy(*pickleStep))
+            {
+                foundStep = true;
+                break;
+            }
+        }
+        if (foundStep)
+            break;
+    }
+
+    // Then: at least one step from the rule background is indexed
+    EXPECT_THAT(foundStep, testing::IsTrue()) << "No step found via rule-background UpdateSteps";
+}
+
 TEST(TestQuery, FindLocationOf_MinimalPickleHasLocation)
 {
     // Given
@@ -743,6 +1072,20 @@ TEST(TestQuery, FindLocationOf_MinimalPickleHasLocation)
 
     // Then
     EXPECT_THAT(location, testing::Optional(testing::_));
+}
+
+TEST(TestQuery, FindLocationOf_ExamplesTablePickleUsesExampleLocation)
+{
+    // Given: examples-table pickle whose lineage has a row-level example
+    const auto [envelopes, query] = LoadNdjsonWithQuery(TestdataFile("examples-tables.ndjson"));
+    const auto& pickle = FindFirstPickle(envelopes);
+
+    // When
+    const auto location = query.FindLocationOf(pickle);
+
+    // Then: location comes from the example row
+    ASSERT_THAT(location, testing::Optional(testing::_));
+    EXPECT_THAT(location->line, testing::Gt(0u));
 }
 
 TEST(TestQuery, FindMeta_MinimalHasMeta)
@@ -814,6 +1157,94 @@ TEST(TestQuery, FindMostSevereTestStepResultBy_MinimalPassedViaTestCaseFinished)
     EXPECT_THAT(result->status, testing::Eq(test_step_result_status::PASSED));
 }
 
+TEST(TestQuery, FindMostSevereTestStepResultBy_EmptyTestCaseStartedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_case_started started{ .attempt = 0, .id = "nonexistent", .test_case_id = "tc1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindMostSevereTestStepResultBy(started), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindMostSevereTestStepResultBy_SelectsMostSevereWhenMultipleSteps)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    const test_case_started started{ .attempt = 0, .id = "tcs1", .test_case_id = "tc1", .timestamp = { .seconds = 0, .nanos = 0 } };
+    const test_step_finished passedStep{
+        .test_case_started_id = "tcs1",
+        .test_step_id = "s1",
+        .test_step_result = { .duration = {}, .message = {}, .status = test_step_result_status::PASSED }
+    };
+    const test_step_finished failedStep{
+        .test_case_started_id = "tcs1",
+        .test_step_id = "s2",
+        .test_step_result = { .duration = {}, .message = {}, .status = test_step_result_status::FAILED }
+    };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_case_started = started });
+    query.Update(envelope{ .test_step_finished = passedStep });
+    query.Update(envelope{ .test_step_finished = failedStep });
+
+    // When
+    const auto result = query.FindMostSevereTestStepResultBy(started);
+
+    // Then
+    ASSERT_THAT(result, testing::Optional(testing::_));
+    EXPECT_THAT(result->status, testing::Eq(test_step_result_status::FAILED));
+}
+
+TEST(TestQuery, FindMostSevereTestStepResultBy_TestCaseStartedWithNoStepsReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given: test case is registered but has no test step finished entries
+    const test_case_started started{ .attempt = 0, .id = "tcs1", .test_case_id = "tc1", .timestamp = { .seconds = 0, .nanos = 0 } };
+    const test_step_started stepStarted{ .test_case_started_id = "tcs1", .test_step_id = "s1" };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_case_started = started });
+    query.Update(envelope{ .test_step_started = stepStarted });
+
+    // When / Then: no finished steps, so no result
+    EXPECT_THAT(query.FindMostSevereTestStepResultBy(started), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindMostSevereTestStepResultBy_PassedBeforeFailedPicksFailed)
+{
+    using namespace cucumber::messages;
+
+    // Given: three steps — passed, skipped, failed — FAILED must win
+    const test_case_started started{ .attempt = 0, .id = "tcs1", .test_case_id = "tc1", .timestamp = { .seconds = 0, .nanos = 0 } };
+
+    auto makeFinished = [](const std::string& stepId, test_step_result_status status) -> test_step_finished
+    {
+        return test_step_finished{
+            .test_case_started_id = "tcs1",
+            .test_step_id = stepId,
+            .test_step_result = { .duration = {}, .message = {}, .status = status }
+        };
+    };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_case_started = started });
+    query.Update(envelope{ .test_step_finished = makeFinished("s1", test_step_result_status::PASSED) });
+    query.Update(envelope{ .test_step_finished = makeFinished("s2", test_step_result_status::SKIPPED) });
+    query.Update(envelope{ .test_step_finished = makeFinished("s3", test_step_result_status::FAILED) });
+
+    // When
+    const auto result = query.FindMostSevereTestStepResultBy(started);
+
+    // Then
+    ASSERT_THAT(result, testing::Optional(testing::_));
+    EXPECT_THAT(result->status, testing::Eq(test_step_result_status::FAILED));
+}
+
 TEST(TestQuery, FindPickleBy_ViaTestCaseStarted)
 {
     // Given
@@ -880,6 +1311,50 @@ TEST(TestQuery, FindPickleBy_ViaTestStepFinished)
     EXPECT_THAT(pickle->name, testing::Eq("cukes"));
 }
 
+TEST(TestQuery, FindPickleBy_ViaTestCaseStarted_UnknownPickleIdReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given: test_case registered with a pickle_id that is not indexed
+    const test_case tc{ .id = "tc1", .pickle_id = "no-such-pickle" };
+    const test_case_started tcs{ .attempt = 0, .id = "tcs1", .test_case_id = "tc1", .timestamp = { .seconds = 0, .nanos = 0 } };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_case = tc });
+    query.Update(envelope{ .test_case_started = tcs });
+
+    // When / Then
+    EXPECT_THAT(query.FindPickleBy(tcs), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindPickleBy_ViaTestStepStarted_UnknownTestCaseStartedIdReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given: step started referencing an unknown test case started id
+    cucumber::query::Query query;
+    const test_step_started tss{ .test_case_started_id = "nonexistent", .test_step_id = "s1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindPickleBy(tss), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindPickleBy_ViaTestStepFinished_UnknownTestCaseStartedIdReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given: step finished referencing an unknown test case started id
+    cucumber::query::Query query;
+    const test_step_finished tsf{
+        .test_case_started_id = "nonexistent",
+        .test_step_id = "s1",
+        .test_step_result = { .duration = {}, .message = {}, .status = test_step_result_status::PASSED }
+    };
+
+    // When / Then
+    EXPECT_THAT(query.FindPickleBy(tsf), testing::Eq(std::nullopt));
+}
+
 TEST(TestQuery, FindPickleStepBy_ViaTestStep)
 {
     // Given
@@ -896,6 +1371,18 @@ TEST(TestQuery, FindPickleStepBy_ViaTestStep)
 
     // Then
     EXPECT_THAT(pickleStep, testing::Optional(testing::_));
+}
+
+TEST(TestQuery, FindPickleStepBy_UnknownPickleStepIdReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given: test step referencing a pickle step id that was never indexed
+    cucumber::query::Query query;
+    const test_step ts{ .id = "ts1", .pickle_step_id = std::string("no-such-pickle-step") };
+
+    // When / Then
+    EXPECT_THAT(query.FindPickleStepBy(ts), testing::Eq(std::nullopt));
 }
 
 TEST(TestQuery, FindStepBy_ViaPickleStep)
@@ -918,6 +1405,50 @@ TEST(TestQuery, FindStepBy_ViaPickleStep)
     EXPECT_THAT(step, testing::Optional(testing::_));
 }
 
+TEST(TestQuery, FindStepBy_UnknownAstNodeIdReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const pickle_step pickleStep{ .ast_node_ids = { "nonexistent" }, .id = "ps1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindStepBy(pickleStep), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindStepBy_EmptyAstNodeIdsReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const pickle_step pickleStep{ .ast_node_ids = {}, .id = "ps1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindStepBy(pickleStep), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindStepBy_FeatureBackgroundStepIsIndexed)
+{
+    // Given: backgrounds.ndjson has a feature-level background whose steps must be indexed
+    const auto query = QueryFromNdjson(TestdataFile("backgrounds.ndjson"));
+    const auto all = query.FindAllTestCaseStarted();
+    ASSERT_THAT(all, testing::Not(testing::IsEmpty()));
+
+    const auto stepsStarted = query.FindTestStepsStartedBy(all[0]);
+    ASSERT_THAT(stepsStarted, testing::Not(testing::IsEmpty()));
+
+    const auto testStep = query.FindTestStepBy(stepsStarted[0]);
+    ASSERT_THAT(testStep, testing::Optional(testing::_));
+
+    const auto pickleStep = query.FindPickleStepBy(*testStep);
+    ASSERT_THAT(pickleStep, testing::Optional(testing::_));
+
+    // When / Then: step from background is findable
+    EXPECT_THAT(query.FindStepBy(*pickleStep), testing::Optional(testing::_));
+}
+
 TEST(TestQuery, FindStepDefinitionsBy_MinimalTestStepHasOneDefinition)
 {
     // Given
@@ -934,6 +1465,37 @@ TEST(TestQuery, FindStepDefinitionsBy_MinimalTestStepHasOneDefinition)
 
     // Then
     EXPECT_THAT(stepDefinitions, testing::SizeIs(1u));
+}
+
+TEST(TestQuery, FindStepDefinitionsBy_UnknownIdReturnsEmpty)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const std::vector<std::string> ids{ "nonexistent" };
+    const test_step testStep{ .id = "ts1", .step_definition_ids = ids };
+
+    // When / Then
+    EXPECT_THAT(query.FindStepDefinitionsBy(testStep), testing::IsEmpty());
+}
+
+TEST(TestQuery, FindStepDefinitionsBy_KnownIdIsIncluded)
+{
+    // Given: minimal fixture with one step definition
+    const auto query = QueryFromNdjson(TestdataFile("minimal.ndjson"));
+    const auto all = query.FindAllTestCaseStarted();
+    ASSERT_THAT(all, testing::SizeIs(1u));
+    const auto stepsStarted = query.FindTestStepsStartedBy(all[0]);
+    ASSERT_THAT(stepsStarted, testing::SizeIs(1u));
+    const auto testStep = query.FindTestStepBy(stepsStarted[0]);
+    ASSERT_THAT(testStep, testing::Optional(testing::_));
+
+    // When
+    const auto defs = query.FindStepDefinitionsBy(*testStep);
+
+    // Then
+    EXPECT_THAT(defs, testing::SizeIs(1u));
 }
 
 TEST(TestQuery, FindSuggestionsBy_UnknownParameterTypePickleStepHasSuggestions)
@@ -974,6 +1536,41 @@ TEST(TestQuery, FindSuggestionsBy_UnknownParameterTypePickleHasSuggestions)
 
     // Then
     EXPECT_THAT(foundSuggestion, testing::IsTrue());
+}
+
+TEST(TestQuery, FindSuggestionsBy_UnknownPickleStepReturnsEmpty)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const pickle_step pickleStep{ .id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindSuggestionsBy(pickleStep), testing::IsEmpty());
+}
+
+TEST(TestQuery, FindSuggestionsBy_KnownPickleStepWithSuggestionIsFound)
+{
+    // Given: unknown-parameter-type fixture has at least one pickle step with a suggestion
+    const auto query = QueryFromNdjson(TestdataFile("unknown-parameter-type.ndjson"));
+    const auto pickleSteps = query.FindAllPickleSteps();
+    ASSERT_THAT(pickleSteps, testing::Not(testing::IsEmpty()));
+
+    bool found = false;
+
+    // When: search for a pickle step that returns suggestions
+    for (const auto& ps : pickleSteps)
+    {
+        if (!query.FindSuggestionsBy(ps).empty())
+        {
+            found = true;
+            break;
+        }
+    }
+
+    // Then
+    EXPECT_THAT(found, testing::IsTrue());
 }
 
 TEST(TestQuery, FindTestCaseBy_ViaTestCaseFinished)
@@ -1058,6 +1655,18 @@ TEST(TestQuery, FindTestCaseDurationBy_MinimalViaTestCaseFinished)
     EXPECT_THAT(duration->nanos, testing::Eq(3'000'000u));
 }
 
+TEST(TestQuery, FindTestCaseFinishedBy_UnknownTestCaseStartedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_case_started started{ .attempt = 0, .id = "nonexistent", .test_case_id = "tc1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestCaseFinishedBy(started), testing::Eq(std::nullopt));
+}
+
 TEST(TestQuery, FindTestCaseStartedBy_ViaTestCaseFinished)
 {
     // Given
@@ -1109,6 +1718,42 @@ TEST(TestQuery, FindTestCaseStartedBy_ViaTestStepFinished)
     EXPECT_THAT(started->id, testing::Eq(all[0].id));
 }
 
+TEST(TestQuery, FindTestCaseStartedBy_UnknownTestCaseFinishedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_case_finished finished{ .test_case_started_id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestCaseStartedBy(finished), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindTestCaseStartedBy_UnknownTestStepStartedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_step_started stepStarted{ .test_case_started_id = "nonexistent", .test_step_id = "s1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestCaseStartedBy(stepStarted), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindTestCaseStartedBy_UnknownTestStepFinishedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_step_finished stepFinished{ .test_case_started_id = "nonexistent", .test_step_id = "s1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestCaseStartedBy(stepFinished), testing::Eq(std::nullopt));
+}
+
 TEST(TestQuery, FindTestRun_MinimalStartedAndFinished)
 {
     // Given
@@ -1130,6 +1775,27 @@ TEST(TestQuery, FindTestRunDuration_EmptyQueryReturnsNullopt)
     EXPECT_THAT(query.FindTestRunDuration(), testing::Eq(std::nullopt));
 }
 
+TEST(TestQuery, FindTestRunDuration_ValueMatchesTimestampDifference)
+{
+    using namespace cucumber::messages;
+
+    // Given: run from t=1.000s to t=3.500s
+    const test_run_started started{ .timestamp = { .seconds = 1, .nanos = 0 } };
+    const test_run_finished finished{ .timestamp = { .seconds = 3, .nanos = 500000000 } };
+
+    cucumber::query::Query query;
+    query.Update(envelope{ .test_run_started = started });
+    query.Update(envelope{ .test_run_finished = finished });
+
+    // When
+    const auto duration = query.FindTestRunDuration();
+
+    // Then: duration is 2s 500'000'000ns
+    ASSERT_THAT(duration, testing::Optional(testing::_));
+    EXPECT_THAT(duration->seconds, testing::Eq(2u));
+    EXPECT_THAT(duration->nanos, testing::Eq(500000000u));
+}
+
 TEST(TestQuery, FindTestRunHookFinishedBy_ViaTestRunHookStarted)
 {
     // Given
@@ -1144,6 +1810,18 @@ TEST(TestQuery, FindTestRunHookFinishedBy_ViaTestRunHookStarted)
     EXPECT_THAT(finished, testing::Optional(testing::_));
 }
 
+TEST(TestQuery, FindTestRunHookFinishedBy_UnknownTestRunHookStartedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_run_hook_started hookStarted{ .id = "nonexistent", .hook_id = "h1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestRunHookFinishedBy(hookStarted), testing::Eq(std::nullopt));
+}
+
 TEST(TestQuery, FindTestRunHookStartedBy_ViaTestRunHookFinished)
 {
     // Given
@@ -1156,6 +1834,18 @@ TEST(TestQuery, FindTestRunHookStartedBy_ViaTestRunHookFinished)
 
     // Then
     EXPECT_THAT(started, testing::Optional(testing::_));
+}
+
+TEST(TestQuery, FindTestRunHookStartedBy_UnknownTestRunHookFinishedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_run_hook_finished hookFinished{ .test_run_hook_started_id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestRunHookStartedBy(hookFinished), testing::Eq(std::nullopt));
 }
 
 TEST(TestQuery, FindTestStepFinishedAndTestStepBy_MinimalHasOnePair)
@@ -1173,6 +1863,30 @@ TEST(TestQuery, FindTestStepFinishedAndTestStepBy_MinimalHasOnePair)
     EXPECT_THAT(pairs[0].first.test_case_started_id, testing::Eq(all[0].id));
 }
 
+TEST(TestQuery, FindTestStepBy_UnknownTestStepStartedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_step_started stepStarted{ .test_case_started_id = "tcs1", .test_step_id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestStepBy(stepStarted), testing::Eq(std::nullopt));
+}
+
+TEST(TestQuery, FindTestStepBy_UnknownTestStepFinishedReturnsNullopt)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_step_finished stepFinished{ .test_case_started_id = "tcs1", .test_step_id = "nonexistent" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestStepBy(stepFinished), testing::Eq(std::nullopt));
+}
+
 TEST(TestQuery, FindTestStepsFinishedBy_MinimalViaTestCaseFinished)
 {
     // Given
@@ -1186,6 +1900,18 @@ TEST(TestQuery, FindTestStepsFinishedBy_MinimalViaTestCaseFinished)
     EXPECT_THAT(query.FindTestStepsFinishedBy(*finished), testing::SizeIs(1u));
 }
 
+TEST(TestQuery, FindTestStepsFinishedBy_UnknownTestCaseStartedReturnsEmpty)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_case_started started{ .attempt = 0, .id = "nonexistent", .test_case_id = "tc1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestStepsFinishedBy(started), testing::IsEmpty());
+}
+
 TEST(TestQuery, FindTestStepsStartedBy_MinimalViaTestCaseFinished)
 {
     // Given
@@ -1197,6 +1923,18 @@ TEST(TestQuery, FindTestStepsStartedBy_MinimalViaTestCaseFinished)
 
     // Then
     EXPECT_THAT(query.FindTestStepsStartedBy(*finished), testing::SizeIs(1u));
+}
+
+TEST(TestQuery, FindTestStepsStartedBy_UnknownTestCaseStartedReturnsEmpty)
+{
+    using namespace cucumber::messages;
+
+    // Given
+    cucumber::query::Query query;
+    const test_case_started started{ .attempt = 0, .id = "nonexistent", .test_case_id = "tc1" };
+
+    // When / Then
+    EXPECT_THAT(query.FindTestStepsStartedBy(started), testing::IsEmpty());
 }
 
 TEST(TestQuery, FindUnambiguousStepDefinitionBy_MinimalReturnsDefinition)

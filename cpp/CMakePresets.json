@@ -26,6 +26,18 @@
         "CUCUMBER_QUERY_BUILD_TESTS": "ON",
         "CUCUMBER_QUERY_ENABLE_COVERAGE": "ON"
       }
+    },
+    {
+      "name": "Mutation",
+      "displayName": "Mutation",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/Mutation",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CUCUMBER_QUERY_BUILD_TESTS": "ON",
+        "CUCUMBER_QUERY_ENABLE_MUTATION": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -36,6 +48,10 @@
     {
       "name": "Coverage",
       "configurePreset": "Coverage"
+    },
+    {
+      "name": "Mutation",
+      "configurePreset": "Mutation"
     }
   ],
   "testPresets": [

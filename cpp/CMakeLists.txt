@@ -16,6 +16,7 @@ endif()
 # Options
 # ---------------------------------------------------------------------------
 option(CUCUMBER_QUERY_ENABLE_COVERAGE "Enable test coverage instrumentation" OFF)
+option(CUCUMBER_QUERY_ENABLE_MUTATION "Enable mutation testing instrumentation with Mull" OFF)
 option(CUCUMBER_QUERY_BUILD_TESTS "Build cucumber-query tests" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -72,6 +73,23 @@ if(CUCUMBER_QUERY_ENABLE_COVERAGE)
     endif()
     target_compile_options(cucumber.query PUBLIC --coverage)
     target_link_options(cucumber.query PUBLIC --coverage)
+endif()
+
+# ---------------------------------------------------------------------------
+# Mutation testing
+# ---------------------------------------------------------------------------
+if(CUCUMBER_QUERY_ENABLE_MUTATION)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "Mutation testing with Mull requires Clang")
+    endif()
+    find_program(MULL_RUNNER mull-runner REQUIRED)
+    find_file(MULL_IR_FRONTEND mull-ir-frontend PATHS /usr/lib NO_DEFAULT_PATH REQUIRED)
+    target_compile_options(cucumber.query PUBLIC
+        -O0
+        -fpass-plugin=${MULL_IR_FRONTEND}
+        -g
+        -grecord-command-line
+    )
 endif()
 
 # ---------------------------------------------------------------------------
