@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ matrix.toolchain }}-${{ github.sha }}
+          key: ccache-${{ matrix.toolchain }}-${{ github.ref }}
           restore-keys: ccache-${{ matrix.toolchain }}-
 
       - name: Configure
@@ -102,7 +102,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ matrix.cc }}-${{ matrix.version }}-${{ github.sha }}
+          key: ccache-${{ matrix.cc }}-${{ matrix.version }}-${{ github.ref }}
           restore-keys: ccache-${{ matrix.cc }}-${{ matrix.version }}-
 
       - name: Configure
@@ -143,7 +143,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-mutation-${{ github.sha }}
+          key: ccache-mutation-${{ github.ref }}
           restore-keys: ccache-mutation-
 
       - name: Configure
