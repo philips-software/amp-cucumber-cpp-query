@@ -10,7 +10,7 @@ on:
 
 jobs:
   devcontainer:
-    name: Build & Test (${{ matrix.toolchain }}-${{ matrix.arch }})
+    name: Build & Test (${{ matrix.toolchain }})
     runs-on: [ubuntu-latest]
     container:
       image: ghcr.io/philips-software/amp-devcontainer-cpp:6.10.3@sha256:e1f388179dbeabaddcdd37b8b563ed89ca3cd36dcf158aa2e5c4f70eb513efec
@@ -21,7 +21,6 @@ jobs:
       fail-fast: false
       matrix:
         toolchain: [ gcc, clang ]
-        arch: [ x64, arm64 ]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -36,8 +35,8 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ matrix.toolchain }}-${{ matrix.arch }}-${{ github.sha }}
-          restore-keys: ccache-${{ matrix.toolchain }}-${{ matrix.arch }}-
+          key: ccache-${{ matrix.toolchain }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.toolchain }}-
 
       - name: Configure
         working-directory: cpp
@@ -61,15 +60,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { cc: gcc,   cxx: g++,     version: 11, runner: ubuntu-2404 }
-          - { cc: gcc,   cxx: g++,     version: 12, runner: ubuntu-2404 }
-          - { cc: gcc,   cxx: g++,     version: 13, runner: ubuntu-2404 }
-          - { cc: gcc,   cxx: g++,     version: 14, runner: ubuntu-2404 }
-          - { cc: clang, cxx: clang++, version: 16, runner: ubuntu-2204 }
-          - { cc: clang, cxx: clang++, version: 17, runner: ubuntu-2404 }
-          - { cc: clang, cxx: clang++, version: 18, runner: ubuntu-2404 }
-          - { cc: clang, cxx: clang++, version: 19, runner: ubuntu-2404 }
-          - { cc: clang, cxx: clang++, version: 20, runner: ubuntu-2404 }
+          - { cc: gcc,   cxx: g++,     version: 11, runner: ubuntu-24.04 }
+          - { cc: gcc,   cxx: g++,     version: 12, runner: ubuntu-24.04 }
+          - { cc: gcc,   cxx: g++,     version: 13, runner: ubuntu-24.04 }
+          - { cc: gcc,   cxx: g++,     version: 14, runner: ubuntu-24.04 }
+          - { cc: clang, cxx: clang++, version: 16, runner: ubuntu-22.04 }
+          - { cc: clang, cxx: clang++, version: 17, runner: ubuntu-24.04 }
+          - { cc: clang, cxx: clang++, version: 18, runner: ubuntu-24.04 }
+          - { cc: clang, cxx: clang++, version: 19, runner: ubuntu-24.04 }
+          - { cc: clang, cxx: clang++, version: 20, runner: ubuntu-24.04 }
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
