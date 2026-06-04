@@ -11,7 +11,7 @@ on:
 jobs:
   devcontainer:
     name: Build & Test (${{ matrix.toolchain }}-${{ matrix.arch }})
-    runs-on: [self-hosted, linux, "${{ matrix.arch }}", philips-code-hub, ubuntu-latest]
+    runs-on: [ubuntu-latest]
     container:
       image: ghcr.io/philips-software/amp-devcontainer-cpp:6.10.3@sha256:e1f388179dbeabaddcdd37b8b563ed89ca3cd36dcf158aa2e5c4f70eb513efec
     env:
@@ -53,7 +53,7 @@ jobs:
 
   compiler-versions:
     name: ${{ matrix.cxx }}-${{ matrix.version }}
-    runs-on: [self-hosted, linux, x64, philips-code-hub, "${{ matrix.runner }}"]
+    runs-on: ["${{ matrix.runner }}"]
     env:
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -124,7 +124,7 @@ jobs:
 
   mutation:
     name: Mutation Testing
-    runs-on: [self-hosted, linux, x64, philips-code-hub, ubuntu-latest]
+    runs-on: ["ubuntu-latest"]
     container:
       image: ghcr.io/philips-software/amp-devcontainer-cpp:6.10.3@sha256:e1f388179dbeabaddcdd37b8b563ed89ca3cd36dcf158aa2e5c4f70eb513efec
     env:
