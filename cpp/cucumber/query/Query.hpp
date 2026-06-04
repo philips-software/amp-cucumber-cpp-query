@@ -142,7 +142,7 @@ namespace cucumber::query
         void UpdateGherkinDocument(const cucumber::messages::gherkin_document& document);
         void UpdateFeature(const cucumber::messages::feature& feature, Lineage lineage);
         void UpdateRule(const cucumber::messages::rule& rule, Lineage lineage);
-        void UpdateScenario(const cucumber::messages::scenario& scenario, Lineage lineage);
+        void UpdateScenario(const cucumber::messages::scenario& scenario, const Lineage& lineage);
         void UpdateSteps(const std::vector<cucumber::messages::step>& steps);
         void UpdatePickle(const cucumber::messages::pickle& pickle);
         void UpdateTestCase(const cucumber::messages::test_case& testCase);

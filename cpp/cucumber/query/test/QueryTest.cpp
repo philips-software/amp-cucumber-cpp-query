@@ -989,11 +989,14 @@ TEST(TestQuery, FindLineageBy_SecondExamplesHasCorrectIndex)
     {
         if (!env.pickle)
             continue;
+
         const auto lineage = query.FindLineageBy(*env.pickle);
         if (!lineage || !lineage->examples)
             continue;
+
         if (lineage->examplesIndex == 1u)
             foundSecondExamples = true;
+
         if (lineage->exampleIndex == 1u)
             foundSecondRow = true;
     }
@@ -1045,9 +1048,11 @@ TEST(TestQuery, FindLineageBy_RuleBackgroundStepIsIndexed)
             const auto testStep = query.FindTestStepBy(stepStarted);
             if (!testStep)
                 continue;
+
             const auto pickleStep = query.FindPickleStepBy(*testStep);
             if (!pickleStep)
                 continue;
+
             if (query.FindStepBy(*pickleStep))
             {
                 foundStep = true;
@@ -1222,7 +1227,7 @@ TEST(TestQuery, FindMostSevereTestStepResultBy_PassedBeforeFailedPicksFailed)
     // Given: three steps — passed, skipped, failed — FAILED must win
     const test_case_started started{ .attempt = 0, .id = "tcs1", .test_case_id = "tc1", .timestamp = { .seconds = 0, .nanos = 0 } };
 
-    auto makeFinished = [](const std::string& stepId, test_step_result_status status) -> test_step_finished
+    auto makeFinished = [](const std::string& stepId, test_step_result_status status)
     {
         return test_step_finished{
             .test_case_started_id = "tcs1",

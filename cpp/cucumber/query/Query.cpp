@@ -203,7 +203,7 @@ namespace cucumber::query
         }
     }
 
-    void Query::UpdateScenario(const cucumber::messages::scenario& scenario, Lineage lineage)
+    void Query::UpdateScenario(const cucumber::messages::scenario& scenario, const Lineage& lineage)
     {
         {
             Lineage scenarioLineage = lineage;
