@@ -13,6 +13,7 @@
       "binaryDir": "${sourceDir}/build/Host",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CUCUMBER_QUERY_FETCH_DEPS": "ON",
         "CUCUMBER_QUERY_BUILD_TESTS": "ON"
       }
     },
@@ -23,6 +24,7 @@
       "binaryDir": "${sourceDir}/build/Coverage",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CUCUMBER_QUERY_FETCH_DEPS": "ON",
         "CUCUMBER_QUERY_BUILD_TESTS": "ON",
         "CUCUMBER_QUERY_ENABLE_COVERAGE": "ON"
       }
@@ -35,6 +37,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_COMPILER": "clang++",
+        "CUCUMBER_QUERY_FETCH_DEPS": "ON",
         "CUCUMBER_QUERY_BUILD_TESTS": "ON",
         "CUCUMBER_QUERY_ENABLE_MUTATION": "ON"
       }

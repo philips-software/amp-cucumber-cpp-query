@@ -60,7 +60,7 @@ ctest --preset Coverage --test-dir build/Coverage -R <test_name>
 ## File Naming Conventions
 
 **Source files**: CamelCase.cpp/.hpp
-**CMake targets and Executables**: follow directory structure like: prepend all with `cucumber.query` and follow directory structure like: cucumber.query, cucumber.query.test, cucumber.query.subdirectory, cucumber.query.subdirectory.test etc.
+**CMake targets and Executables**: follow directory structure like: prepend all with `cucumber_query_lib` and follow directory structure like: cucumber_query_lib, cucumber_query_lib.test, cucumber_query_lib.subdirectory, cucumber_query_lib.subdirectory.test etc.
 
 ## General Coding Rules
 

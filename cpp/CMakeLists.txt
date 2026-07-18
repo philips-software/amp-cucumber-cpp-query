@@ -1,20 +1,16 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
 project(cucumber-query LANGUAGES CXX VERSION 0.1.0)
 
 # ---------------------------------------------------------------------------
-# Standalone detection
-# ---------------------------------------------------------------------------
-if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
-    set(CUCUMBER_QUERY_STANDALONE ON)
-else()
-    set(CUCUMBER_QUERY_STANDALONE OFF)
-endif()
-
-# ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
+if (POLICY CMP0077)
+    # Allow CMake 3.13+ to override options when using FetchContent / add_subdirectory.
+    cmake_policy(SET CMP0077 NEW)
+endif ()
+
+option(CUCUMBER_QUERY_FETCH_DEPS "Fetch dependencies via FetchContent." Off)
 option(CUCUMBER_QUERY_ENABLE_COVERAGE "Enable test coverage instrumentation" OFF)
 option(CUCUMBER_QUERY_ENABLE_MUTATION "Enable mutation testing instrumentation with Mull" OFF)
 option(CUCUMBER_QUERY_BUILD_TESTS "Build cucumber-query tests" OFF)
@@ -41,25 +37,27 @@ endif()
 # ---------------------------------------------------------------------------
 # Dependencies
 # ---------------------------------------------------------------------------
-include("dependencies.cpm")
+include(cmake/dependencies.cpm.cmake)
 
 # ---------------------------------------------------------------------------
 # Library target
 # ---------------------------------------------------------------------------
-add_library(cucumber.query
-    cucumber/query/Query.cpp
-    cucumber/query/Lineage.cpp
+add_library(cucumber_query_lib)
+add_library(cucumber::query ALIAS cucumber_query_lib)
+
+target_sources(cucumber_query_lib
+    PRIVATE
+        cucumber/query/Query.cpp
+        cucumber/query/Lineage.cpp
 )
 
-add_library(cucumber::query ALIAS cucumber.query)
-
-target_include_directories(cucumber.query
+target_include_directories(cucumber_query_lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(cucumber.query
+target_link_libraries(cucumber_query_lib
     PUBLIC
         cucumber::messages
 )
@@ -71,8 +69,8 @@ if(CUCUMBER_QUERY_ENABLE_COVERAGE)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         message(FATAL_ERROR "Coverage instrumentation is only supported with GCC or Clang")
     endif()
-    target_compile_options(cucumber.query PUBLIC --coverage)
-    target_link_options(cucumber.query PUBLIC --coverage)
+    target_compile_options(cucumber_query_lib PUBLIC --coverage)
+    target_link_options(cucumber_query_lib PUBLIC --coverage)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -84,7 +82,7 @@ if(CUCUMBER_QUERY_ENABLE_MUTATION)
     endif()
     find_program(MULL_RUNNER mull-runner REQUIRED)
     find_file(MULL_IR_FRONTEND mull-ir-frontend PATHS /usr/lib NO_DEFAULT_PATH REQUIRED)
-    target_compile_options(cucumber.query PUBLIC
+    target_compile_options(cucumber_query_lib PUBLIC
         -O0
         -fpass-plugin=${MULL_IR_FRONTEND}
         -g
